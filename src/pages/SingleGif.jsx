@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { HiOutlineExternalLink } from 'react-icons/hi';
@@ -20,25 +20,78 @@ const SingleGif = () => {
   const [gif, setGif] = useState({});
   const [relatedGifs, setRelatedGifs] = useState([]);
   const [readMore, setReadMore] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [gifId, setGifId] = useState('');
+  const observer = useRef();
 
   const { gf, addToFavorites, favorites } = GifyContextState();
+
+  const LIMIT = 10;
+
+  const fetchRelatedGifs = async (id, resetGifs = false) => {
+    try {
+      setLoading(true);
+      const { data, pagination } = await gf.related(id, {
+        limit: LIMIT,
+        offset: resetGifs ? 0 : offset,
+      });
+
+      if (resetGifs) {
+        setRelatedGifs(data);
+        setOffset(LIMIT);
+      } else {
+        setRelatedGifs((prev) => [...prev, ...data]);
+        setOffset((prev) => prev + LIMIT);
+      }
+
+      setHasMore(pagination.total_count > offset + LIMIT);
+    } catch (error) {
+      console.error('Error fetching related gifs:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!contentType.includes(type)) {
       throw new Error('Invalid Content Type');
     }
+
     const fetchGif = async () => {
-      const gifId = slug.split('-');
-      const { data } = await gf.gif(gifId[gifId.length - 1]);
-      const { data: related } = await gf.related(gifId[gifId.length - 1], {
-        limit: 10,
-      });
-      setGif(data);
-      setRelatedGifs(related);
+      try {
+        const idArray = slug.split('-');
+        const id = idArray[idArray.length - 1];
+        setGifId(id);
+
+        const { data } = await gf.gif(id);
+        setGif(data);
+
+        fetchRelatedGifs(id, true);
+      } catch (error) {
+        console.error('Error fetching gif:', error);
+      }
     };
 
     fetchGif();
   }, [type, slug]);
+
+  const lastGifElementRef = useCallback(
+    (node) => {
+      if (loading || !gifId) return;
+      if (observer.current) observer.current.disconnect();
+
+      observer.current = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && hasMore) {
+          fetchRelatedGifs(gifId);
+        }
+      });
+
+      if (node) observer.current.observe(node);
+    },
+    [loading, hasMore, gifId]
+  );
 
   const shareGif = () => {
     // todo
@@ -143,14 +196,14 @@ const SingleGif = () => {
               Favorite
             </button>
             <button
-              onClick={shareGif} // todo
+              onClick={shareGif}
               className='flex gap-6 items-center font-bold text-lg'
             >
               <FaPaperPlane size={25} />
               Share
             </button>
             <button
-              onClick={EmbedGif} // todo
+              onClick={EmbedGif}
               className='flex gap-5 items-center font-bold text-lg'
             >
               <IoCodeSharp size={30} />
@@ -162,10 +215,31 @@ const SingleGif = () => {
         <div>
           <span className='font-extrabold'>Related GIFs</span>
           <div className='columns-2 md:columns-3 gap-2'>
-            {relatedGifs.slice(1).map((gif) => (
-              <Gif gif={gif} key={gif.id} />
-            ))}
+            {relatedGifs.length > 0 &&
+              relatedGifs.map((relatedGif, index) => {
+                if (relatedGifs.length === index + 1) {
+                  return (
+                    <div ref={lastGifElementRef} key={relatedGif.id}>
+                      <Gif gif={relatedGif} />
+                    </div>
+                  );
+                } else {
+                  return <Gif gif={relatedGif} key={relatedGif.id} />;
+                }
+              })}
           </div>
+
+          {loading && (
+            <div className='flex justify-center my-4'>
+              <div className='loader'></div>
+            </div>
+          )}
+
+          {!hasMore && relatedGifs.length > 0 && (
+            <p className='text-center my-4 text-gray-400'>
+              No more related GIFs to load
+            </p>
+          )}
         </div>
       </div>
     </div>
