@@ -8,6 +8,7 @@ import Category from './pages/Category';
 import Search from './pages/Search';
 import SingleGif from './pages/SingleGif';
 import Favorites from './pages/Favorites';
+import GifyContextProvider from './context/GifyContext';
 
 function App() {
   const router = createBrowserRouter([
@@ -44,7 +45,11 @@ function App() {
     },
   ]);
 
-  return <RouterProvider router={router}></RouterProvider>;
+  return (
+    <GifyContextProvider>
+      <RouterProvider router={router}></RouterProvider>
+    </GifyContextProvider>
+  );
 }
 
 export default App;
